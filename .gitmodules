@@ -1,0 +1,6 @@
+[submodule "opendbc"]
+	path = opendbc
+	url = https://github.com/commaai/opendbc.git
+[submodule "panda"]
+	path = panda
+	url = https://github.com/commaai/panda.git
