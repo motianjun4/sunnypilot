@@ -9,7 +9,7 @@ from selfdrive.car.toyota.toyotacan import create_steer_command, create_ui_comma
                                            create_fcw_command, create_lta_steer_command, create_ui_command_disable_startup_lkas
 from selfdrive.car.toyota.values import CAR, STATIC_DSU_MSGS, NO_STOP_TIMER_CAR, TSS2_CAR, \
                                         MIN_ACC_SPEED, PEDAL_TRANSITION, CarControllerParams, \
-                                        UNSUPPORTED_DSU_CAR, FEATURES
+                                        UNSUPPORTED_DSU_CAR, FEATURES, RADAR_ACC_CAR_TSS1
 from selfdrive.car.toyota.interface import CarInterface
 from opendbc.can.packer import CANPacker
 
@@ -36,6 +36,7 @@ class CarController:
     self.packer = CANPacker(dbc_name)
     self.gas = 0
     self.accel = 0
+    self.radar_acc_tss1 = CP.carFingerprint in RADAR_ACC_CAR_TSS1
 
     self.sm = messaging.SubMaster(['e2eLongState'])
     self.param_s = Params()
@@ -100,6 +101,9 @@ class CarController:
     if CS.pcm_acc_status != 8:
       # pcm entered standstill or it's disabled
       self.standstill_req = False
+    if self.radar_acc_tss1:
+      # release_standstill always 0 on radar_acc_tss1 cars
+      self.standstill_req = False
 
     self.last_steer = apply_steer
     self.last_standstill = CS.out.standstill
@@ -131,15 +135,16 @@ class CarController:
     # we can spam can to cancel the system even if we are using lat only control
     if (self.frame % 3 == 0 and self.CP.openpilotLongitudinalControl) or pcm_cancel_cmd:
       lead = hud_control.leadVisible or CS.out.vEgo < 12.  # at low speed we always assume the lead is present so ACC can be engaged
+      lead_standstill = lead and hud_control.leadVelocity < 0.1
 
       # Lexus IS uses a different cancellation message
       if pcm_cancel_cmd and self.CP.carFingerprint in UNSUPPORTED_DSU_CAR:
         can_sends.append(create_acc_cancel_command(self.packer))
       elif self.CP.openpilotLongitudinalControl:
-        can_sends.append(create_accel_command(self.packer, pcm_accel_cmd, pcm_cancel_cmd, self.standstill_req, lead, CS.acc_type, CS.gap_adjust_cruise_tr_line, CS.reverse_acc_change))
+        can_sends.append(create_accel_command(self.packer, pcm_accel_cmd, pcm_cancel_cmd, self.standstill_req, lead, CS.acc_type, CS.gap_adjust_cruise_tr_line, CS.reverse_acc_change, lead_standstill))
         self.accel = pcm_accel_cmd
       else:
-        can_sends.append(create_accel_command(self.packer, 0, pcm_cancel_cmd, False, lead, CS.acc_type, CS.gap_adjust_cruise_tr_line, CS.reverse_acc_change))
+        can_sends.append(create_accel_command(self.packer, 0, pcm_cancel_cmd, False, lead, CS.acc_type, CS.gap_adjust_cruise_tr_line, CS.reverse_acc_change, lead_standstill))
 
     if self.frame % 2 == 0 and self.CP.enableGasInterceptor and self.CP.openpilotLongitudinalControl:
       # send exactly zero if gas cmd is zero. Interceptor will send the max between read value and gas cmd.
