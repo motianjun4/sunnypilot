@@ -12,6 +12,7 @@ venv/
 model2.png
 a.out
 .hypothesis
+pyextra
 
 *.dylib
 *.DSYM
